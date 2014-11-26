@@ -23,8 +23,8 @@ fn approx_eq(a: f64, b: f64, threshold: f64) -> bool {
 fn abs_diff<T:NumCast>(a : T, b : T) -> f64 {
     //! Return the difference in the absolute values of a and b.
     //! i.e. |a| - |b|
-    let a64 = a.to_f64().unwrap();
-    let b64 = b.to_f64().unwrap();
+    let a64 = a.to_f64().unwrap_or_else(|| 0.0);
+    let b64 = b.to_f64().unwrap_or_else(|| 0.0);
     let abs_a = if a64 > 0.0 { a64 } else { -a64 };
     let abs_b = if b64 > 0.0 { b64 } else { -b64 };
     abs_a - abs_b
@@ -139,7 +139,7 @@ impl<T:Add<T,T>+Mul<T,T>+Zero+Clone> Matrix<T> {
 impl<T:NumCast+Clone> Matrix<T> {
     pub fn to_f64(&self) -> Matrix<f64> {
         //! Return a new Matrix with all of the elements of self cast to f64.
-        self.map(|n| -> f64 { num::cast(n).unwrap() })
+        self.map(|n| -> f64 { num::cast(n).unwrap_or_else(|| 0.0) })
     }
 }
 
