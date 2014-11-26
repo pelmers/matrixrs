@@ -1,0 +1,12 @@
+[project]
+name = "matrixrs"
+version = "0.0.1-pre"
+authors = ["Peter Elmers <peter.elmers@yahoo.com>"]
+
+[lib]
+name = "matrixrs"
+path = "src/matrixrs/lib.rs"
+
+[[test]]
+name = "tests"
+
