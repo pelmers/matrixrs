@@ -187,45 +187,45 @@ impl<T:Num+NumCast+Clone> Matrix<T> {
         //! Perform the LU decomposition of square matrix self, and return
         //! the tuple (P,L,U) where P*self = L*U, and L and U are triangular.
         assert_eq!(self.m, self.n);
-        let P = self.doolittle_pivot();
-        let PM = (P*(*self)).to_f64();
-        let mut L = identity(self.m);
-        let mut U = zeros(self.m, self.n);
+        let pivot = self.doolittle_pivot();
+        let pivot_m = (pivot*(*self)).to_f64();
+        let mut lower = identity(self.m);
+        let mut upper = zeros(self.m, self.n);
         for j in range(0, self.n) {
             for i in range(0, j+1) {
                 let mut uppersum = 0.0;
                 for k in range(0,i) {
-                    uppersum += U.at(k,j)*L.at(i,k);
+                    uppersum += upper.at(k,j)*lower.at(i,k);
                 }
-                U.data[i][j] = PM.at(i,j) - uppersum;
+                upper.data[i][j] = pivot_m.at(i,j) - uppersum;
             }
             for i in range(j, self.m) {
                 let mut lowersum = 0.0;
                 for k in range(0,j) {
-                    lowersum += U.at(k,j)*L.at(i,k);
+                    lowersum += upper.at(k,j)*lower.at(i,k);
                 }
-                L.data[i][j] = (PM.at(i,j) - lowersum) / U.at(j,j);
+                lower.data[i][j] = (pivot_m.at(i,j) - lowersum) / upper.at(j,j);
             }
         }
-        (P, L, U)
+        (pivot, lower, upper)
     }
     pub fn det(&self) -> f64 {
         //! Return the determinant of square matrix self
         //! via LU decomposition.
         //! If not a square matrix, fail.
         match self.lu() {
-            // |L|=1 because it L is unitriangular
+            // |L|=1 because it is unitriangular
             // |P|=1 or -1 because it's a permutation matrix
             // |U|=product of U's diagonal
-            (P, _, U) => {
+            (pivot, _, upper) => {
                 // return the product of the diagonal
                 let mut prod = 1.0;
                 let mut swaps = 0i32;
                 for i in range(0, self.m) {
-                    prod *= U.at(i,i);
-                    swaps += if P.at(i,i) == num::one() { 0 } else { 1 };
+                    prod *= upper.at(i,i);
+                    swaps += if pivot.at(i,i) == num::one() { 0 } else { 1 };
                 }
-                // flip the sign of the determinant based on swaps of P
+                // flip the sign of the determinant based on swaps of pivot
                 if (swaps/2) % 2 == 1 {
                     -prod
                 } else {
