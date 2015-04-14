@@ -1,15 +1,31 @@
-use std::num;
-use std::num::{Zero, NumCast, Num};
+use std::cmp;
+use std::num::{Zero, ToPrimitive};
+use std::ops::{Not,Neg,Add,Sub,Mul,Index,IndexMut,BitXor,BitOr};
+use std::f64::NAN;
 
 /// Matrix -- Generic 2D Matrix implementation in Rust.
-#[deriving(Show)]
+#[derive(Debug)]
 pub struct Matrix<T> {
     /// Number of rows
-    m : uint,
+    m : usize,
     /// Number of columns
-    n : uint,
+    n : usize,
     /// Table (vector of vector) of data values in the matrix
     data : Vec<Vec<T>>
+}
+
+pub fn sum<T>(vec: &Vec<T>) -> T
+    where T:Copy+Zero+Add<Output=T>
+{
+    //! Return sum of vec.
+    vec.iter().fold(T::zero(), |b,&f| b + f)
+}
+
+pub fn dot<T>(a: &Vec<T>, b: &Vec<T>) -> T
+    where T:Copy+Zero+Add<Output=T>+Mul<Output=T>
+{
+    //! Return dot product of a and b.
+    a.iter().zip(b.iter()).map(|(x, y)| (*x)*(*y)).fold(T::zero(), |b,f| b + f)
 }
 
 fn approx_eq(a: f64, b: f64, threshold: f64) -> bool {
@@ -18,7 +34,7 @@ fn approx_eq(a: f64, b: f64, threshold: f64) -> bool {
     (if a > b { a-b } else { b-a }) <= threshold
 }
 
-fn abs_diff<T:NumCast>(a : T, b : T) -> f64 {
+fn abs_diff<T:ToPrimitive>(a : T, b : T) -> f64 {
     //! Return the difference in the absolute values of a and b.
     //! i.e. |a| - |b|
     let a64 = a.to_f64().unwrap_or_else(|| 0.0);
@@ -33,132 +49,220 @@ impl<T> Matrix<T> {
         //! Create a new matrix using the given data.
         //! Asserts that the number of columns is consistent.
         let rows = data.len();
-        let cols = data[0].len();
+        let cols = if rows > 0 { data[0].len() } else { 0 };
         for row in data.iter() {
             assert_eq!(row.len(), cols);
         }
         Matrix{m: rows, n: cols, data: data}
     }
-    pub fn from_fn(m : uint, n : uint, func : |uint, uint| -> T) -> Matrix<T> {
+    pub fn from_fn<F>(m : usize, n : usize, func : F) -> Matrix<T>
+        where F:Fn(usize, usize) -> T
+    {
         //! Create an m-by-n matrix by using a function func
         //! that returns a number given row and column.
-        let mut data = Vec::with_capacity(m);
-        for i in range(0, m) {
-            data.push(Vec::from_fn(n, |j:uint| -> T { func(i, j) }));
+        Matrix{
+            m:m,
+            n:n,
+            data:(0..m).map(|i| (0..n).map(|j| func(i,j)).collect()).collect()
         }
-        Matrix{m:m, n:n, data:data}
     }
-    pub fn size(&self) -> (uint, uint) {
+    pub fn size(&self) -> (usize, usize) {
         //! Return the size of a Matrix as row, column.
         (self.m, self.n)
+    }
+    pub fn row(&self, row : usize) -> &Vec<T> {
+        //! Return specified row from an MxN matrix as vector.
+        &self.data[row]
+    }
+    pub fn col(&self, col: usize) -> Vec<&T> {
+        //! Return specified col from an MxN matrix as a vector.
+        self.data.iter().map(|r| &r[col]).collect()
+    }
+    pub fn diag(&self) -> Vec<&T> {
+        //! Return specified diagonal as a vector.
+        (0..cmp::min(self.m,self.n)).map(|i| &self.data[i][i]).collect()
+    }
+    pub fn augment<'a>(&'a self, mat : &'a Matrix<T>) -> Matrix<&'a T> {
+        //! Return a new matrix, self augmented by matrix mat.
+        //! An MxN matrix augmented with an MxC matrix produces an Mx(N+C) matrix.
+        Matrix::from_fn(self.m, self.n+mat.n, |i,j| {
+            if j < self.n { &self.data[i][j] } else { &mat.data[i][j-self.n] }
+        })
+    }
+    pub fn transpose(&self) -> Matrix<&T> {
+        //! Return the transpose of the matrix.
+        //! The transpose of a matrix MxN has dimensions NxM.
+        Matrix::from_fn(self.n, self.m, |i,j| &self.data[j][i])
+    }
+    pub fn flatten(&self) -> Vec<&T> {
+        //! Flatten matrix in row-major order as a vector.
+        self.data.iter().flat_map(|r| r.iter()).collect()
+    }
+    // TODO: don't collect then iterate
+    // (i.e. define flatten as iter.collect, rather than iter as flatten.iter)
+    pub fn iter(&self) -> ::std::vec::IntoIter<&T> {
+        //! Return iterator over matrix in row-major order.
+        self.flatten().into_iter()
+    }
+    pub fn map<U,F>(&self, mapper : F) -> Matrix<U>
+        where F: Fn(&T) -> U
+    {
+        //! Return a copy of self where each value has been
+        //! operated upon by mapper.
+        Matrix::from_fn(self.m, self.n, |i,j| mapper(&self.data[i][j]))
     }
 }
 
 impl<T:Clone> Matrix<T> {
-    pub fn from_elem(m : uint, n : uint, val : T) -> Matrix<T> {
+    pub fn from_elem(m: usize, n: usize, elem: T) -> Matrix<T> {
         //! Create an m-by-n matrix, where each element is a clone of elem.
-        let mut data = Vec::with_capacity(m);
-        for _ in range(0, m) {
-            data.push(Vec::from_elem(n, val.clone()));
+        Matrix{
+            m: m,
+            n: n,
+            data: vec![vec![elem; n]; m]
         }
-        Matrix{m:m, n:n, data:data}
-    }
-    pub fn at(&self, row : uint, col : uint) -> T {
-        //! Return a clone of the element at row, col.
-        self.data[row][col].clone()
-    }
-    pub fn row(&self, row : uint) -> Matrix<T> {
-        //! Return specified row from an MxN matrix as a 1xN matrix.
-        Matrix{m: 1, n:self.n, data: vec![self.data[row].clone()]}
-    }
-    pub fn col(&self, col : uint) -> Matrix<T> {
-        //! Return specified col from an MxN matrix as an Mx1 matrix.
-        let mut c = Vec::with_capacity(self.m);
-        for i in range(0, self.m) {
-            c.push(vec![self.at(i, col)]);
-        }
-        Matrix{m: self.m, n: 1, data: c}
-    }
-    //pub fn diag(&self, k : int) -> Matrix<T>
-    pub fn augment(&self, mat : &Matrix<T>) -> Matrix<T> {
-        //! Return a new matrix, self augmented by matrix mat.
-        //! An MxN matrix augmented with an MxC matrix produces an Mx(N+C) matrix.
-        Matrix::from_fn(self.m, self.n+mat.n, |i,j| {
-            if j < self.n { self.at(i, j) } else { mat.at(i, j - self.n) }
-        })
-    }
-    pub fn transpose(&self) -> Matrix<T> {
-        //! Return the transpose of the matrix.
-        //! The transpose of a matrix MxN has dimensions NxM.
-        Matrix::from_fn(self.n, self.m, |i,j| { self.at(j, i) })
-    }
-    pub fn apply(&self, applier : |uint, uint|) {
-        //! Call an applier function with each index in self.
-        //! Input to applier is two parameters: row, col.
-        for i in range(0, self.m) {
-            for j in range(0, self.n) {
-                applier(i, j);
-            }
-        }
-    }
-    pub fn fold(&self, init : T, folder: |T,T| -> T) -> T {
-        //! Call a folder function that acts as if it flattens the matrix
-        //! onto one row and then folds across.
-        let mut acc = init;
-        self.apply(|i,j| { acc = folder(acc.clone(), self.at(i,j)); });
-        acc
     }
 }
 
-impl<T:Clone, U> Matrix<T> {
-    pub fn map(&self, mapper : |T| -> U) -> Matrix<U> {
-        //! Return a copy of self where each value has been
-        //! operated upon by mapper.
-        Matrix::from_fn(self.m, self.n, |i,j| { mapper(self.at(i,j)) })
+impl<T:Copy> Matrix<T> {
+    pub fn owned_col(&self, col: usize) -> Vec<T> {
+        self.data.iter().map(|r| r[col]).collect()
     }
 }
 
-// methods for Matrix of numbers
-impl<T:Add<T,T>+Mul<T,T>+Zero+Clone> Matrix<T> {
-    pub fn sum(&self) -> T {
-        //! Return the summation of all elements in self.
-        self.fold(num::zero(), |a,b| { a + b })
-    }
-    fn dot(&self, other: &Matrix<T>) -> T {
-        //! Return the product of the first row in self with the first row in other.
-        let mut sum : T = num::zero();
-        for i in range(0, self.n) {
-            sum = sum + self.at(0, i) * other.at(i, 0);
-        }
-        sum
-    }
-}
-
-impl<T:NumCast+Clone> Matrix<T> {
+impl<T:ToPrimitive> Matrix<T> {
     pub fn to_f64(&self) -> Matrix<f64> {
         //! Return a new Matrix with all of the elements of self cast to f64.
-        self.map(|n| -> f64 { num::cast(n).unwrap_or_else(|| 0.0) })
+        self.map(|n| n.to_f64().unwrap_or(NAN))
     }
-}
-
-impl<T:NumCast+Clone, U:NumCast+Clone> Matrix<T> {
-    pub fn approx_eq(&self, other: &Matrix<U>, threshold : f64) -> bool {
+    pub fn approx_eq<U:ToPrimitive>(&self, other: &Matrix<U>, threshold : f64) -> bool {
         //! Return whether all of the elements of self are within
         //! threshold of all of the corresponding elements of other.
-        let other_f64 = other.to_f64();
-        let self_f64 = self.to_f64();
-        let mut equal = true;
-        self.apply(|i,j| {
-            equal = if approx_eq(self_f64.at(i,j), other_f64.at(i,j), threshold) {
-                equal
-            } else {
-                false
-            };
-        });
-        equal
+        if self.size() != other.size() {
+            false
+        } else {
+            self.iter().zip(other.iter())
+                .all(|(a,b)| approx_eq(a.to_f64().unwrap_or(NAN),
+                                       b.to_f64().unwrap_or(NAN),
+                                       threshold))
+        }
     }
 }
 
+impl<T:PartialEq> PartialEq for Matrix<T> {
+    fn eq(&self, rhs: &Matrix<T>) -> bool {
+        //! Return whether the elements of self equal the elements of rhs.
+        if self.size() == rhs.size() {
+            self.iter().zip(rhs.iter()).all(|(a,b)| a == b)
+        }
+        else {
+            false
+        }
+    }
+}
+
+impl<'a,'b,T:Add+Copy> Add<&'b Matrix<T>> for &'a Matrix<T> {
+    type Output=Matrix<<T as Add>::Output>;
+
+    fn add(self, rhs: &'b Matrix<T>) -> Self::Output {
+        //! Return the sum of two matrices with the same dimensions.
+        //! If sizes don't match, fail.
+        assert_eq!(self.size(), rhs.size());
+        Matrix::from_fn(self.m, self.n, |i, j| {
+            self.data[i][j] + rhs.data[i][j]
+        })
+    }
+}
+
+impl<'a,T:Neg+Copy> Neg for &'a Matrix<T> {
+    type Output=Matrix<<T as Neg>::Output>;
+
+    fn neg(self) -> Self::Output {
+        //! Return a matrix of the negation of each value in self.
+        self.map(|n| { -(*n) })
+    }
+}
+
+impl<'a,'b,T:Sub+Copy> Sub<&'b Matrix<T>> for &'a Matrix<T> {
+    type Output=Matrix<<T as Sub>::Output>;
+    fn sub(self, rhs: &'b Matrix<T>) -> Self::Output {
+        //! Return the difference of two matrices with the same dimensions.
+        //! If sizes don't match, fail.
+        assert_eq!(self.size(), rhs.size());
+        Matrix::from_fn(self.m, self.n, |i, j| {
+            self.data[i][j] - rhs.data[i][j]
+        })
+    }
+}
+
+// use * to multiply matrices
+impl<'a,'b,T> Mul<&'b Matrix<T>> for &'a Matrix<T>
+    where T:Zero+Copy+Mul<Output=T>+Add<Output=T>
+{
+    type Output=Matrix<T>;
+
+    fn mul(self, rhs: &'b Matrix<T>) -> Self::Output {
+        //! Return the product of multiplying two matrices.
+        //! MxR matrix * RxN matrix = MxN matrix.
+        //! If inner dimensions don't match, fail.
+        assert_eq!(self.n, rhs.m);
+        Matrix::from_fn(self.m, rhs.n, |i,j| {
+            dot(self.row(i), &rhs.owned_col(j))
+        })
+    }
+}
+
+impl<T> Index<(usize, usize)> for Matrix<T> {
+    type Output = T;
+    fn index(&self, index: (usize, usize)) -> &T {
+        //! Return the element at the location specified by a (row, column) tuple.
+        match index {
+            (x,y) => &self.data[x][y]
+        }
+    }
+}
+
+impl<T> IndexMut<(usize, usize)> for Matrix<T> {
+    fn index_mut(&mut self, index: (usize, usize)) -> &mut T {
+        match index {
+            (x,y) => &mut self.data[x][y]
+        }
+    }
+}
+
+impl<'a, T> Not for &'a Matrix<T> {
+    type Output = Matrix<&'a T>;
+    fn not(self) -> Self::Output {
+        //! Return the transpose of self.
+        self.transpose()
+    }
+}
+
+impl<'a, T> BitOr for &'a Matrix<T> {
+    type Output = Matrix<&'a T>;
+    fn bitor(self, rhs: Self) -> Matrix<&'a T> {
+        //! Return self augmented by matrix rhs.
+        self.augment(rhs)
+    }
+}
+
+impl<'a,T:Zero+Mul<Output=T>+Add<Output=T>+Copy> BitXor<usize> for &'a Matrix<T> {
+    type Output = Matrix<T>;
+    fn bitxor(self, rhs: usize) -> Matrix<T> {
+        //! Return a matrix of self raised to the power of rhs.
+        //! Self must be a square matrix.
+        assert_eq!(self.m, self.n);
+        let mut ret = Matrix::from_fn(self.m, self.n, |i,j| {
+            self.data[i][j]
+        });
+        for _ in 1..rhs {
+            ret = self*&ret;
+        }
+        ret
+    }
+}
+
+/*
 impl<T:Num+NumCast+Clone> Matrix<T> {
     fn doolittle_pivot(&self) -> Matrix<T> {
         //! Return the pivoting matrix for self (for Doolittle algorithm)
@@ -235,128 +339,20 @@ impl<T:Num+NumCast+Clone> Matrix<T> {
         }
     }
 }
-
-impl<T:PartialEq+Clone> PartialEq for Matrix<T> {
-    fn eq(&self, rhs: &Matrix<T>) -> bool {
-        //! Return whether the elements of self equal the elements of rhs.
-        if self.size() == rhs.size() {
-            let mut equal = true;
-            self.apply(|i,j| {
-                equal = if self.at(i,j) == rhs.at(i,j) { equal } else { false };
-            });
-            equal
-        }
-        else {
-            false
-        }
-    }
-}
-
-// use + to add matrices
-impl<T:Add<T,T>+Clone> Add<Matrix<T>,Matrix<T>> for Matrix<T> {
-    fn add(&self, rhs: &Matrix<T>) -> Matrix<T> {
-        //! Return the sum of two matrices with the same dimensions.
-        //! If sizes don't match, fail.
-        assert_eq!(self.size(), rhs.size());
-        Matrix::from_fn(self.m, self.n, |i, j| {
-            self.at(i,j) + rhs.at(i,j)
-        })
-    }
-}
-
-// use unary - to negate matrices
-impl<T:Neg<T>+Clone> Neg<Matrix<T>> for Matrix<T> {
-    fn neg(&self) -> Matrix<T> {
-        //! Return a matrix of the negation of each value in self.
-        self.map(|n| { -n })
-    }
-}
-
-// use binary - to subtract matrices
-impl<T:Neg<T>+Add<T,T>+Clone> Sub<Matrix<T>, Matrix<T>> for Matrix<T> {
-    fn sub(&self, rhs: &Matrix<T>) -> Matrix<T> {
-        //! Return the difference of two matrices with the same dimensions.
-        //! If sizes don't match, fail.
-        (*self) + (-(*rhs))
-    }
-}
-
-// use * to multiply matrices
-impl<T:Add<T,T>+Mul<T,T>+Zero+Clone> Mul<Matrix<T>, Matrix<T>> for Matrix<T> {
-    fn mul(&self, rhs: &Matrix<T>) -> Matrix<T> {
-        //! Return the product of multiplying two matrices.
-        //! MxR matrix * RxN matrix = MxN matrix.
-        //! If inner dimensions don't match, fail.
-        assert_eq!(self.n, rhs.m);
-        Matrix::from_fn(self.m, rhs.n, |i,j| {
-            self.row(i).dot(&rhs.col(j))
-        })
-    }
-}
-
-// use [(x,y)] to index matrices
-impl<T> Index<(uint, uint), T> for Matrix<T> {
-    fn index(&self, index: &(uint, uint)) -> &T {
-        //! Return the element at the location specified by a (row, column) tuple.
-        match *index {
-            (x,y) => &self.data[x][y]
-        }
-    }
-}
-
-// use [(x,y)] to do mutable indexing
-impl<T> IndexMut<(uint, uint), T> for Matrix<T> {
-    fn index_mut(&mut self, index: &(uint, uint)) -> &mut T {
-        match *index {
-            (x,y) => &mut self.data[x][y]
-        }
-    }
-}
-
-// use ! to transpose matrices
-impl<T:Clone> Not<Matrix<T>> for Matrix<T> {
-    fn not(&self) -> Matrix<T> {
-        //! Return the transpose of self.
-        self.transpose()
-    }
-}
-
-// use | to augment matrices
-impl<T:Clone> BitOr<Matrix<T>,Matrix<T>> for Matrix<T> {
-    fn bitor(&self, rhs: &Matrix<T>) -> Matrix<T> {
-        //! Return self augmented by matrix rhs.
-        self.augment(rhs)
-    }
-}
-
-// use ^ to exponentiate matrices
-impl<T:Add<T,T>+Mul<T,T>+Zero+Clone> BitXor<uint, Matrix<T>> for Matrix<T> {
-    fn bitxor(&self, rhs: &uint) -> Matrix<T> {
-        //! Return a matrix of self raised to the power of rhs.
-        //! Self must be a square matrix.
-        assert_eq!(self.m, self.n);
-        let mut ret = Matrix::from_fn(self.m, self.n, |i,j| {
-            self.at(i, j)
-        });
-        for _ in range(1, *rhs) {
-            ret = (*self)*ret;
-        }
-        ret
-    }
-}
+*/
 
 // convenience constructors
-pub fn zeros(m : uint, n : uint) -> Matrix<f64> {
+pub fn zeros(m : usize, n : usize) -> Matrix<f64> {
     //! Create an MxN zero matrix of type f64.
     Matrix::from_elem(m, n, 0.0)
 }
 
-pub fn ones(m : uint, n : uint) -> Matrix<f64> {
+pub fn ones(m : usize, n : usize) -> Matrix<f64> {
     //! Create an MxN ones matrix of type f64.
     Matrix::from_elem(m, n, 1.0)
 }
 
-pub fn identity(dim : uint) -> Matrix<f64> {
+pub fn identity(dim : usize) -> Matrix<f64> {
     //! Create a dimxdim identity matrix of type f64.
     Matrix::from_fn(dim, dim, |i, j| { if i == j { 1.0 } else { 0.0 }})
 }
