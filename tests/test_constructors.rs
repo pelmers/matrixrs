@@ -3,7 +3,7 @@ use matrixrs::Matrix;
 
 #[test]
 fn test_from_fn() {
-    assert_eq!(Matrix::<uint>::from_fn(2, 2, |i,j| { i+j }), Matrix::new(vec![vec![0,1],vec![1,2]]));
+    assert_eq!(Matrix::<usize>::from_fn(2, 2, |i,j| { i+j }), Matrix::new(vec![vec![0,1],vec![1,2]]));
 }
 
 #[test]

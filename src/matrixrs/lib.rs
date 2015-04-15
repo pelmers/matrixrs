@@ -3,5 +3,5 @@
 #![feature(zero_one)]
 
 // public exports
-pub use matrix::{Matrix, zeros, ones, identity};
+pub use matrix::{Matrix, zeros, ones, identity, dot, sum};
 pub mod matrix;

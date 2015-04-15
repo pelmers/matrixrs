@@ -1,10 +1,10 @@
 use std::cmp;
-use std::num::{Zero, ToPrimitive};
+use std::num::{Zero, ToPrimitive, One};
 use std::ops::{Not,Neg,Add,Sub,Mul,Index,IndexMut,BitXor,BitOr};
 use std::f64::NAN;
 
 /// Matrix -- Generic 2D Matrix implementation in Rust.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Matrix<T> {
     /// Number of rows
     m : usize,
@@ -98,11 +98,19 @@ impl<T> Matrix<T> {
         //! Flatten matrix in row-major order as a vector.
         self.data.iter().flat_map(|r| r.iter()).collect()
     }
+    pub fn into_flatten(self) -> Vec<T> {
+        //! Consume and flatten matrix in row-major order as a vector.
+        self.data.into_iter().flat_map(|r| r.into_iter()).collect()
+    }
     // TODO: don't collect then iterate
     // (i.e. define flatten as iter.collect, rather than iter as flatten.iter)
     pub fn iter(&self) -> ::std::vec::IntoIter<&T> {
         //! Return iterator over matrix in row-major order.
         self.flatten().into_iter()
+    }
+    pub fn into_iter(self) -> ::std::vec::IntoIter<T> {
+        //! Return consuming iterator over matrix in row-major order.
+        self.into_flatten().into_iter()
     }
     pub fn map<U,F>(&self, mapper : F) -> Matrix<U>
         where F: Fn(&T) -> U
@@ -126,6 +134,7 @@ impl<T:Clone> Matrix<T> {
 
 impl<T:Copy> Matrix<T> {
     pub fn owned_col(&self, col: usize) -> Vec<T> {
+        //! Return vector of given column.
         self.data.iter().map(|r| r[col]).collect()
     }
 }
@@ -224,6 +233,7 @@ impl<T> Index<(usize, usize)> for Matrix<T> {
 
 impl<T> IndexMut<(usize, usize)> for Matrix<T> {
     fn index_mut(&mut self, index: (usize, usize)) -> &mut T {
+        //! Mutable ref to element at given index.
         match index {
             (x,y) => &mut self.data[x][y]
         }
@@ -262,21 +272,22 @@ impl<'a,T:Zero+Mul<Output=T>+Add<Output=T>+Copy> BitXor<usize> for &'a Matrix<T>
     }
 }
 
-/*
-impl<T:Num+NumCast+Clone> Matrix<T> {
+impl<T> Matrix<T>
+    where T:ToPrimitive+Zero+One+Copy+Clone+Mul<Output=T>+Add<Output=T>+PartialEq
+{
     fn doolittle_pivot(&self) -> Matrix<T> {
         //! Return the pivoting matrix for self (for Doolittle algorithm)
         //! Assume that self is a square matrix.
         // initialize with a type T identity matrix
         let mut pivot = Matrix::from_fn(self.m, self.n, |i, j| {
-            if i == j { num::one() } else { num::zero() }
+            if i == j { T::one() } else { T::zero() }
         });
         // rearrange pivot matrix so max of each column of self is on
         // the diagonal of self when multiplied by the pivot
-        for j in range(0,self.n) {
+        for j in (0..self.n) {
             let mut row_max = j;
-            for i in range(j,self.m) {
-                if abs_diff(self.at(i,j), self.at(row_max, j)) > 0.0 {
+            for i in (j..self.m) {
+                if abs_diff(self[(i,j)], self[(row_max,j)]) > 0.0 {
                     row_max = i;
                 }
             }
@@ -292,23 +303,23 @@ impl<T:Num+NumCast+Clone> Matrix<T> {
         //! the tuple (P,L,U) where P*self = L*U, and L and U are triangular.
         assert_eq!(self.m, self.n);
         let pivot = self.doolittle_pivot();
-        let pivot_m = (pivot*(*self)).to_f64();
+        let pivot_m = (&pivot*self).to_f64();
         let mut lower = identity(self.m);
         let mut upper = zeros(self.m, self.n);
-        for j in range(0, self.n) {
-            for i in range(0, j+1) {
+        for j in (0..self.n) {
+            for i in (0..j+1) {
                 let mut uppersum = 0.0;
-                for k in range(0,i) {
-                    uppersum += upper.at(k,j)*lower.at(i,k);
+                for k in (0..i) {
+                    uppersum += upper[(k,j)]*lower[(i,k)];
                 }
-                upper.data[i][j] = pivot_m.at(i,j) - uppersum;
+                upper.data[i][j] = pivot_m[(i,j)] - uppersum;
             }
-            for i in range(j, self.m) {
+            for i in (j..self.m) {
                 let mut lowersum = 0.0;
-                for k in range(0,j) {
-                    lowersum += upper.at(k,j)*lower.at(i,k);
+                for k in (0..j) {
+                    lowersum += upper[(k,j)]*lower[(i,k)];
                 }
-                lower.data[i][j] = (pivot_m.at(i,j) - lowersum) / upper.at(j,j);
+                lower.data[i][j] = (pivot_m[(i,j)] - lowersum) / upper[(j,j)]
             }
         }
         (pivot, lower, upper)
@@ -325,9 +336,9 @@ impl<T:Num+NumCast+Clone> Matrix<T> {
                 // return the product of the diagonal
                 let mut prod = 1.0;
                 let mut swaps = 0i32;
-                for i in range(0, self.m) {
-                    prod *= upper.at(i,i);
-                    swaps += if pivot.at(i,i) == num::one() { 0 } else { 1 };
+                for i in (0..self.m) {
+                    prod *= upper[(i,i)];
+                    swaps += if pivot[(i,i)] == T::one() { 0 } else { 1 };
                 }
                 // flip the sign of the determinant based on swaps of pivot
                 if (swaps/2) % 2 == 1 {
@@ -339,7 +350,6 @@ impl<T:Num+NumCast+Clone> Matrix<T> {
         }
     }
 }
-*/
 
 // convenience constructors
 pub fn zeros(m : usize, n : usize) -> Matrix<f64> {
