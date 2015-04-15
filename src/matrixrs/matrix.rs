@@ -37,8 +37,8 @@ fn approx_eq(a: f64, b: f64, threshold: f64) -> bool {
 fn abs_diff<T:ToPrimitive>(a : T, b : T) -> f64 {
     //! Return the difference in the absolute values of a and b.
     //! i.e. |a| - |b|
-    let a64 = a.to_f64().unwrap_or_else(|| 0.0);
-    let b64 = b.to_f64().unwrap_or_else(|| 0.0);
+    let a64 = a.to_f64().unwrap_or(NAN);
+    let b64 = b.to_f64().unwrap_or(NAN);
     let abs_a = if a64 > 0.0 { a64 } else { -a64 };
     let abs_b = if b64 > 0.0 { b64 } else { -b64 };
     abs_a - abs_b
@@ -137,6 +137,18 @@ impl<T:Copy> Matrix<T> {
         //! Return vector of given column.
         self.data.iter().map(|r| r[col]).collect()
     }
+    pub fn owned_diag(&self) -> Vec<T> {
+        //! Return specified diagonal as a vector.
+        (0..cmp::min(self.m,self.n)).map(|i| self.data[i][i]).collect()
+    }
+    pub fn copy_flatten(&self) -> Vec<T> {
+        //! Flatten matrix into a vector of copied elements.
+        self.data.iter().flat_map(|r| r.iter().map(|e| *e)).collect()
+    }
+    pub fn copy_iter(&self) -> ::std::vec::IntoIter<T> {
+        //! Return iterator over copied elements of matrix in row-major order.
+        self.copy_flatten().into_iter()
+    }
 }
 
 impl<T:ToPrimitive> Matrix<T> {
@@ -161,12 +173,8 @@ impl<T:ToPrimitive> Matrix<T> {
 impl<T:PartialEq> PartialEq for Matrix<T> {
     fn eq(&self, rhs: &Matrix<T>) -> bool {
         //! Return whether the elements of self equal the elements of rhs.
-        if self.size() == rhs.size() {
+        self.size() == rhs.size() &&
             self.iter().zip(rhs.iter()).all(|(a,b)| a == b)
-        }
-        else {
-            false
-        }
     }
 }
 
@@ -335,7 +343,7 @@ impl<T> Matrix<T>
             (pivot, _, upper) => {
                 // return the product of the diagonal
                 let mut prod = 1.0;
-                let mut swaps = 0i32;
+                let mut swaps = 0;
                 for i in (0..self.m) {
                     prod *= upper[(i,i)];
                     swaps += if pivot[(i,i)] == T::one() { 0 } else { 1 };
