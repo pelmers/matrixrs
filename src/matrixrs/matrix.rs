@@ -1,5 +1,5 @@
 use std::cmp;
-use std::num::{Zero, ToPrimitive, One};
+use num::{Zero, ToPrimitive, One};
 use std::ops::{Not,Neg,Add,Sub,Mul,Index,IndexMut,BitXor,BitOr};
 use std::f64::NAN;
 

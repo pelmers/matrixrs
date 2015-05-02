@@ -10,3 +10,4 @@ path = "src/matrixrs/lib.rs"
 [[test]]
 name = "tests"
 
+[dependencies.num]
