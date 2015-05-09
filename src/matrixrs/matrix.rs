@@ -14,18 +14,18 @@ pub struct Matrix<T> {
     data : Vec<Vec<T>>
 }
 
-pub fn sum<T>(vec: &Vec<T>) -> T
+pub fn sum<T>(vec: &[T]) -> T
     where T:Copy+Zero+Add<Output=T>
 {
     //! Return sum of vec.
     vec.iter().fold(T::zero(), |b,&f| b + f)
 }
 
-pub fn dot<T>(a: &Vec<T>, b: &Vec<T>) -> T
+pub fn dot<T>(a: &[T], b: &[T]) -> T
     where T:Copy+Zero+Add<Output=T>+Mul<Output=T>
 {
     //! Return dot product of a and b.
-    a.iter().zip(b.iter()).map(|(x, y)| (*x)*(*y)).fold(T::zero(), |b,f| b + f)
+    a.iter().zip(b.iter()).map(|(&x, &y)| x*y).fold(T::zero(), |b,f| b + f)
 }
 
 fn approx_eq(a: f64, b: f64, threshold: f64) -> bool {
@@ -102,8 +102,6 @@ impl<T> Matrix<T> {
         //! Consume and flatten matrix in row-major order as a vector.
         self.data.into_iter().flat_map(|r| r.into_iter()).collect()
     }
-    // TODO: don't collect then iterate
-    // (i.e. define flatten as iter.collect, rather than iter as flatten.iter)
     pub fn iter(&self) -> ::std::vec::IntoIter<&T> {
         //! Return iterator over matrix in row-major order.
         self.flatten().into_iter()
